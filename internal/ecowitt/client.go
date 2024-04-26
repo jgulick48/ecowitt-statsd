@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/jgulick48/ecowitt-statsd/internal/metrics"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -16,14 +17,18 @@ type Client interface {
 	StopScan()
 }
 
+var metricsClient metrics.Client
+
 type client struct {
 	address    string
 	shouldStop chan bool
 	tickRate   time.Duration
 	httpClient *http.Client
+	metrics    metrics.Client
 }
 
-func NewClient(address string, tickRate time.Duration, httpClient *http.Client) Client {
+func NewClient(address string, tickRate time.Duration, httpClient *http.Client, metrics metrics.Client) Client {
+	metricsClient = metrics
 	return &client{
 		address:    address,
 		shouldStop: make(chan bool),
@@ -71,6 +76,10 @@ func (c *client) scanMetrics() {
 		return
 	}
 	err = json.Unmarshal(body, &scanResponse)
+	if err != nil {
+		log.Println("Error unmarshalling json " + fmt.Sprintf("%s", err))
+		return
+	}
 	for _, sensorValue := range scanResponse.CommonList {
 		sensorValue.EmitMetric()
 	}
@@ -83,6 +92,7 @@ func (c *client) scanMetrics() {
 	for _, sensorValue := range scanResponse.Rain {
 		sensorValue.EmitMetric()
 	}
+	log.Println("Scanned status")
 }
 
 type ScanResponse struct {
@@ -114,11 +124,13 @@ func (s *SensorValue) EmitMetric() {
 		fmt.Println("Error parsing value for string " + fmt.Sprintf("%s:%s", valueParts[0], err))
 		return
 	}
-	metrics.SendGaugeMetric(fmt.Sprintf("ecowitt.%s", metricName), []string{metrics.FormatTag("unit", unit)}, value)
+	metricsClient.SendGaugeMetric(fmt.Sprintf("ecowitt.%s", metricName), []string{metrics.FormatTag("unit", unit)}, value)
 }
 
 func (s *SensorValue) getSensorTypeFromID() string {
 	switch s.ID {
+	case "3":
+		return "feelsLike"
 	case "0x02":
 		return "outdoorTemperature"
 	case "0x03":
@@ -170,16 +182,16 @@ func (cs *ChannelSensorValue) EmitMetrics() {
 	}
 	temperature, err := strconv.ParseFloat(cs.Temp, 64)
 	if err != nil {
-		fmt.Println("Error parsing value for string " + fmt.Sprintf("%s:%s", cs.Temp, err))
+		log.Println("Error parsing value for string " + fmt.Sprintf("%s:%s", cs.Temp, err))
 		return
 	}
 	humidity, err := strconv.ParseFloat(strings.Replace(cs.Humidity, "%", "", -1), 64)
 	if err != nil {
-		fmt.Println("Error parsing value for string " + fmt.Sprintf("%s:%s", cs.Temp, err))
+		log.Println("Error parsing value for string " + fmt.Sprintf("%s:%s", cs.Temp, err))
 		return
 	}
-	metrics.SendGaugeMetric("ecowitt.channelTemperature", append(tags, metrics.FormatTag("unit", cs.Unit)), temperature)
-	metrics.SendGaugeMetric("ecowitt.channelHumidity", tags, humidity)
+	metricsClient.SendGaugeMetric("ecowitt.channelTemperature", append(tags, metrics.FormatTag("unit", cs.Unit)), temperature)
+	metricsClient.SendGaugeMetric("ecowitt.channelHumidity", tags, humidity)
 }
 
 type WH25 struct {
@@ -193,22 +205,22 @@ type WH25 struct {
 func (w *WH25) EmitMetrics() {
 	value, err := strconv.ParseFloat(w.InTemp, 64)
 	if err != nil {
-		fmt.Println("Error parsing value for string " + fmt.Sprintf("%s:%s", w.InTemp, err))
+		log.Println("Error parsing value for string " + fmt.Sprintf("%s:%s", w.InTemp, err))
 		return
 	}
-	metrics.SendGaugeMetric("ecowitt.indoorTemperature", []string{metrics.FormatTag("unit", w.Unit)}, value)
+	metricsClient.SendGaugeMetric("ecowitt.indoorTemperature", []string{metrics.FormatTag("unit", w.Unit)}, value)
 	humidityString := strings.Replace(w.InHumi, "%", "", -1)
 	value, err = strconv.ParseFloat(humidityString, 64)
 	if err != nil {
-		fmt.Println("Error parsing value for string " + fmt.Sprintf("%s:%s", w.InHumi, err))
+		log.Println("Error parsing value for string " + fmt.Sprintf("%s:%s", w.InHumi, err))
 		return
 	}
-	metrics.SendGaugeMetric("ecowitt.indoorHumidity", []string{}, value)
+	metricsClient.SendGaugeMetric("ecowitt.indoorHumidity", []string{}, value)
 	if absPressure, unit, ok := getPressureValue(w.Abs); ok {
-		metrics.SendGaugeMetric("ecowitt.absolutePressure", []string{metrics.FormatTag("unit", unit)}, absPressure)
+		metricsClient.SendGaugeMetric("ecowitt.absolutePressure", []string{metrics.FormatTag("unit", unit)}, absPressure)
 	}
 	if relPressure, unit, ok := getPressureValue(w.Rel); ok {
-		metrics.SendGaugeMetric("ecowitt.relativePressure", []string{metrics.FormatTag("unit", unit)}, relPressure)
+		metricsClient.SendGaugeMetric("ecowitt.relativePressure", []string{metrics.FormatTag("unit", unit)}, relPressure)
 	}
 }
 
@@ -220,7 +232,7 @@ func getPressureValue(pressure string) (float64, string, bool) {
 	}
 	value, err := strconv.ParseFloat(valueParts[0], 64)
 	if err != nil {
-		fmt.Println("Error parsing value for string " + fmt.Sprintf("%s:%s", valueParts[0], err))
+		log.Println("Error parsing value for string " + fmt.Sprintf("%s:%s", valueParts[0], err))
 		return 0, "", false
 	}
 	return value, unit, true

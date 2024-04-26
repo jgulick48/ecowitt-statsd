@@ -1,10 +1,14 @@
 package main
 
 import (
+	"encoding/json"
+	"flag"
 	"fmt"
 	"github.com/DataDog/datadog-go/statsd"
 	"github.com/jgulick48/ecowitt-statsd/internal/ecowitt"
 	"github.com/jgulick48/ecowitt-statsd/internal/metrics"
+	"github.com/jgulick48/ecowitt-statsd/internal/models"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -13,7 +17,10 @@ import (
 	"time"
 )
 
+var configLocation = flag.String("configFile", "./config.json", "Location for the configuration file.")
+
 func main() {
+	config := LoadClientConfig(*configLocation)
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 	done := make(chan bool, 1)
@@ -24,16 +31,33 @@ func main() {
 		done <- true
 	}()
 	var err error
-	metrics.Metrics, err = statsd.New("192.168.3.92:8125")
+	statsdClient, err := statsd.New(fmt.Sprintf(config.StatsServer))
 	if err != nil {
 		log.Printf("Error creating stats client %s", err.Error())
-	} else {
-		metrics.StatsEnabled = true
 	}
-	client := ecowitt.NewClient("192.168.3.134", 5*time.Second, http.DefaultClient)
+	metricsClient := metrics.NewClient(statsdClient, config.DefaultTags)
+	client := ecowitt.NewClient(config.Host, 10*time.Second, http.DefaultClient, metricsClient)
 	client.StartScan()
 	fmt.Println("Running application")
 	<-done
 	client.StopScan()
 	fmt.Println("exiting")
+}
+
+func LoadClientConfig(filename string) models.EcowittConfiguration {
+	if filename == "" {
+		filename = "./config.json"
+	}
+	configFile, err := ioutil.ReadFile(filename)
+	if err != nil {
+		log.Printf("No config file found. Making new IDs")
+		panic(err)
+	}
+	var config models.EcowittConfiguration
+	err = json.Unmarshal(configFile, &config)
+	if err != nil {
+		log.Printf("Invliad config file provided")
+		panic(err)
+	}
+	return config
 }
