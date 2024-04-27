@@ -4,10 +4,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/DataDog/datadog-go/statsd"
-	"github.com/jgulick48/ecowitt-statsd/internal/ecowitt"
-	"github.com/jgulick48/ecowitt-statsd/internal/metrics"
-	"github.com/jgulick48/ecowitt-statsd/internal/models"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -15,9 +11,14 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/DataDog/datadog-go/statsd"
+	"github.com/jgulick48/ecowitt-statsd/internal/ecowitt"
+	"github.com/jgulick48/ecowitt-statsd/internal/metrics"
+	"github.com/jgulick48/ecowitt-statsd/internal/models"
 )
 
-var configLocation = flag.String("configFile", "./config.json", "Location for the configuration file.")
+var configLocation = flag.String("configFile", "/var/lib/ecowitt-statsd/config.json", "Location for the configuration file.")
 
 func main() {
 	config := LoadClientConfig(*configLocation)
@@ -45,19 +46,20 @@ func main() {
 }
 
 func LoadClientConfig(filename string) models.EcowittConfiguration {
+	log.Printf("Loading configuration from %s", filename)
 	if filename == "" {
 		filename = "./config.json"
 	}
 	configFile, err := ioutil.ReadFile(filename)
 	if err != nil {
 		log.Printf("No config file found. Making new IDs")
-		panic(err)
+		fmt.Println(err)
 	}
 	var config models.EcowittConfiguration
 	err = json.Unmarshal(configFile, &config)
 	if err != nil {
 		log.Printf("Invliad config file provided")
-		panic(err)
+		fmt.Println(err)
 	}
 	return config
 }

@@ -1,4 +1,6 @@
-FROM golang:1.18.1 as builder
+ARG ARCH=
+
+FROM ${ARCH}golang:1.18.1 as builder
 
 WORKDIR /app
 
@@ -13,8 +15,8 @@ RUN go test ./...
 
 RUN GOOS=linux CGO_ENABLED=0 go build
 
-FROM alpine:3.16.2
+FROM ${ARCH}alpine:3.16.2
 
 COPY --from=builder /app/ecowitt-statsd /bin/ecowitt-statsd
 
-CMD ["/bin/rv-homekit","-configFile=/var/lib/rv-homekit/config.json"]
+CMD ["/bin/ecowitt-statsd","-configFile=/var/lib/ecowitt-statsd/config.json"]
