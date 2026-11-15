@@ -69,4 +69,18 @@ e.g. `outdoor_temperature` or `channel_temperature_ch2`):
 - `<discoveryPrefix>/sensor/<deviceId>/<objectId>/config`: retained discovery config, sent the first time
   a sensor is seen and again after every reconnect.
 
-If the broker cannot be reached at startup, the error is logged and the daemon continues without MQTT.
+If the broker cannot be reached at startup, the daemon keeps retrying in the background every 30 seconds.
+State updates are dropped while it is disconnected, so the gateway polling never stalls.
+
+## Releasing
+
+Images are built on the shared build machine (`casp-build-01`) through a buildx builder on that Docker context. They are pushed using your local Docker Hub login.
+
+```sh
+make docker-push      # tests, remote multi-arch build, push :<date> and :latest, then git tag <date> and push the tag
+make docker.build     # remote multi-arch build only (no push), as a smoke test
+make version          # show the date-coded version that would be used
+make help             # list all targets
+```
+
+The version is date-coded in UTC, e.g. `2026.11.15-1432`. The same string is used for the image tag (`jgulick48/ecowitt-statsd:2026.11.15-1432`) and the git tag. `docker-push` refuses to run if tracked files have uncommitted changes or if the tag already exists. You can override `IMAGE`, `PLATFORMS`, `BUILD_CONTEXT`, `BUILDER` or `VERSION` on the command line.
