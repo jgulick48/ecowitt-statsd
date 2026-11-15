@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -71,6 +72,16 @@ func Connect(cfg models.MQTTConfig, deviceID string) (*Client, error) {
 		SetWill(c.statusTopic(), "offline", 0, true)
 	if cfg.Username != "" {
 		opts.SetUsername(cfg.Username).SetPassword(cfg.Password)
+	}
+	tlsCfg, err := BuildTLSConfig(cfg.TLS)
+	if err != nil {
+		return nil, err
+	}
+	if tlsCfg != nil {
+		opts.SetTLSConfig(tlsCfg)
+		if u, perr := url.Parse(cfg.Broker); perr != nil || !tlsScheme(u.Scheme) {
+			log.Printf("MQTT TLS settings will be ignored unless the broker URL uses a TLS scheme such as ssl:// (broker: %s)", cfg.Broker)
+		}
 	}
 	opts.SetOnConnectHandler(func(pc paho.Client) {
 		c.ResetDiscovery()
@@ -203,4 +214,12 @@ func (c *Client) SendGaugeMetric(name string, tags []string, value float64) {
 
 func (c *Client) stateTopic(objectID string) string {
 	return c.cfg.TopicPrefix + "/" + objectID + "/state"
+}
+
+func tlsScheme(s string) bool {
+	switch strings.ToLower(s) {
+	case "ssl", "tls", "mqtts", "mqtt+ssl", "tcps", "wss":
+		return true
+	}
+	return false
 }
