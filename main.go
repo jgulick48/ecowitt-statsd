@@ -23,7 +23,8 @@ import (
 var configLocation = flag.String("configFile", "/var/lib/ecowitt-statsd/config.json", "Location for the configuration file.")
 
 func main() {
-	config := LoadClientConfig(*configLocation)
+	flag.Parse()
+	config :=LoadClientConfig(*configLocation)
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 	done := make(chan bool, 1)
