@@ -72,6 +72,37 @@ e.g. `outdoor_temperature` or `channel_temperature_ch2`):
 If the broker cannot be reached at startup, the daemon keeps retrying in the background every 30 seconds.
 State updates are dropped while it is disconnected, so the gateway polling never stalls.
 
+### TLS / mutual TLS
+
+For a TLS broker, use an `ssl://` URL and add a `tls` block:
+
+```json
+"mqtt": {
+  "enabled": true,
+  "broker": "ssl://mqtt.example.com:8883",
+  "tls": {
+    "caFile": "/var/lib/ecowitt-statsd/ca.pem",
+    "certFile": "/var/lib/ecowitt-statsd/client.crt",
+    "keyFile": "/var/lib/ecowitt-statsd/client.key",
+    "serverName": "mqtt.example.com",
+    "insecureSkipVerify": false
+  }
+}
+```
+
+- `caFile`: PEM bundle of CA certificates to trust, for a private CA. It is added to the system CAs, so
+  public CAs are still trusted when it is set.
+- `certFile` / `keyFile`: client certificate and private key for mutual TLS. Set both or neither.
+- `serverName`: overrides the name used for SNI and certificate verification, useful when connecting by IP
+  to a certificate issued for a hostname.
+- `insecureSkipVerify`: skips server certificate verification. Insecure; use only for testing.
+
+All `tls` fields are optional. The settings only apply when the broker URL uses a TLS scheme (`ssl://`,
+`tls://`, `mqtts://`, `mqtt+ssl://`, `tcps://` or `wss://`); with `tcp://` they are ignored and a warning
+is logged. In Docker, mount the files into the container, e.g. under `/var/lib/ecowitt-statsd/`, and
+reference those paths. Invalid TLS settings (unreadable files, mismatched key) disable MQTT with an error
+in the log.
+
 ## Releasing
 
 Images are built on the shared build machine (`casp-build-01`) through a buildx builder on that Docker context. They are pushed using your local Docker Hub login.

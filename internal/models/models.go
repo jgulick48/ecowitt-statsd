@@ -16,15 +16,30 @@ type EcowittConfiguration struct {
 
 // MQTTConfig configures the MQTT / Home Assistant discovery output.
 type MQTTConfig struct {
-	Enabled         bool   `json:"enabled"`
-	Broker          string `json:"broker"`
-	Username        string `json:"username"`
-	Password        string `json:"password"`
-	ClientID        string `json:"clientId"`
-	TopicPrefix     string `json:"topicPrefix"`
-	DiscoveryPrefix string `json:"discoveryPrefix"`
-	DeviceName      string `json:"deviceName"`
-	Retain          bool   `json:"retain"`
+	Enabled         bool          `json:"enabled"`
+	Broker          string        `json:"broker"`
+	Username        string        `json:"username"`
+	Password        string        `json:"password"`
+	ClientID        string        `json:"clientId"`
+	TopicPrefix     string        `json:"topicPrefix"`
+	DiscoveryPrefix string        `json:"discoveryPrefix"`
+	DeviceName      string        `json:"deviceName"`
+	Retain          bool          `json:"retain"`
+	TLS             MQTTTLSConfig `json:"tls"`
+}
+
+// MQTTTLSConfig configures TLS and mutual TLS for the MQTT connection. It only
+// applies when the broker URL uses a TLS scheme such as ssl://.
+type MQTTTLSConfig struct {
+	// CAFile is a PEM bundle of CA certificates appended to the system pool.
+	CAFile string `json:"caFile"`
+	// CertFile and KeyFile are the client certificate and key (mutual TLS).
+	// Both must be set, or neither.
+	CertFile           string `json:"certFile"`
+	KeyFile            string `json:"keyFile"`
+	InsecureSkipVerify bool   `json:"insecureSkipVerify"`
+	// ServerName overrides SNI and certificate verification.
+	ServerName string `json:"serverName"`
 }
 
 // WithDefaults returns a copy of the config with empty fields defaulted.

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -57,8 +58,22 @@ func (c *Client) ResetDiscovery() {
 	c.mu.Unlock()
 }
 
+var pahoLogOnce sync.Once
+
+// enablePahoErrorLogging routes paho's ERROR/CRITICAL output (no-ops by
+// default) to the standard logger. Without it, connection failures such as a
+// TLS handshake or client-certificate rejection are retried silently and the
+// cause never appears in the logs.
+func enablePahoErrorLogging() {
+	pahoLogOnce.Do(func() {
+		paho.ERROR = log.New(log.Writer(), "MQTT error: ", log.LstdFlags)
+		paho.CRITICAL = log.New(log.Writer(), "MQTT critical: ", log.LstdFlags)
+	})
+}
+
 // Connect connects to the broker described by cfg and returns a ready Client.
 func Connect(cfg models.MQTTConfig, deviceID string) (*Client, error) {
+	enablePahoErrorLogging()
 	cfg = cfg.WithDefaults()
 	c := NewClient(cfg, nil, deviceID)
 	opts := paho.NewClientOptions().
@@ -71,6 +86,16 @@ func Connect(cfg models.MQTTConfig, deviceID string) (*Client, error) {
 		SetWill(c.statusTopic(), "offline", 0, true)
 	if cfg.Username != "" {
 		opts.SetUsername(cfg.Username).SetPassword(cfg.Password)
+	}
+	tlsCfg, err := BuildTLSConfig(cfg.TLS)
+	if err != nil {
+		return nil, err
+	}
+	if tlsCfg != nil {
+		opts.SetTLSConfig(tlsCfg)
+		if u, perr := url.Parse(cfg.Broker); perr != nil || !tlsScheme(u.Scheme) {
+			log.Printf("MQTT TLS settings will be ignored unless the broker URL uses a TLS scheme such as ssl:// (broker: %s)", cfg.Broker)
+		}
 	}
 	opts.SetOnConnectHandler(func(pc paho.Client) {
 		c.ResetDiscovery()
@@ -203,4 +228,12 @@ func (c *Client) SendGaugeMetric(name string, tags []string, value float64) {
 
 func (c *Client) stateTopic(objectID string) string {
 	return c.cfg.TopicPrefix + "/" + objectID + "/state"
+}
+
+func tlsScheme(s string) bool {
+	switch strings.ToLower(s) {
+	case "ssl", "tls", "mqtts", "mqtt+ssl", "tcps", "wss":
+		return true
+	}
+	return false
 }
