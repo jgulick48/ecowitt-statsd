@@ -22,6 +22,9 @@ type Publisher interface {
 type pahoPublisher struct{ c paho.Client }
 
 func (p pahoPublisher) Publish(topic string, qos byte, retained bool, payload []byte) error {
+	if !p.c.IsConnectionOpen() {
+		return fmt.Errorf("not connected, dropping message for %s", topic)
+	}
 	tok := p.c.Publish(topic, qos, retained, payload)
 	if !tok.WaitTimeout(5 * time.Second) {
 		return fmt.Errorf("publish to %s timed out", topic)
@@ -62,7 +65,8 @@ func Connect(cfg models.MQTTConfig, deviceID string) (*Client, error) {
 		AddBroker(cfg.Broker).
 		SetClientID(cfg.ClientID).
 		SetAutoReconnect(true).
-		SetConnectRetry(false).
+		SetConnectRetry(true).
+		SetConnectRetryInterval(30*time.Second).
 		SetConnectTimeout(10*time.Second).
 		SetWill(c.statusTopic(), "offline", 0, true)
 	if cfg.Username != "" {
@@ -78,12 +82,15 @@ func Connect(cfg models.MQTTConfig, deviceID string) (*Client, error) {
 		log.Printf("MQTT connection lost: %s", err)
 	})
 	pc := paho.NewClient(opts)
+	// With ConnectRetry the token only completes once connected, so a broker
+	// that is down at startup is retried in the background instead of
+	// disabling MQTT. Publishes are dropped until the connection is open.
 	tok := pc.Connect()
-	if !tok.WaitTimeout(15 * time.Second) {
-		return nil, fmt.Errorf("timed out connecting to MQTT broker %s", cfg.Broker)
+	if tok.WaitTimeout(15*time.Second) && tok.Error() != nil {
+		return nil, tok.Error()
 	}
-	if err := tok.Error(); err != nil {
-		return nil, err
+	if !pc.IsConnected() {
+		log.Printf("MQTT broker %s not reachable yet, retrying in the background", cfg.Broker)
 	}
 	c.mu.Lock()
 	c.publisher = pahoPublisher{pc}
@@ -158,7 +165,7 @@ func (c *Client) SendGaugeMetric(name string, tags []string, value float64) {
 		cfg := map[string]interface{}{
 			"name":               humanName(name, channel, tagValue(tags, "name")),
 			"unique_id":          c.deviceID + "_" + objectID,
-			"object_id":          objectID,
+			"default_entity_id":  "sensor." + c.deviceID + "_" + objectID,
 			"state_topic":        c.stateTopic(objectID),
 			"availability_topic": c.statusTopic(),
 			"state_class":        StateClass(name),

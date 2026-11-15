@@ -52,7 +52,7 @@ func TestDiscoveryAndState(t *testing.T) {
 	}
 	want := map[string]string{
 		"name": "Outdoor Temperature", "unique_id": "ecowitt_192_168_1_50_outdoor_temperature",
-		"object_id": "outdoor_temperature", "state_topic": "ecowitt/outdoor_temperature/state",
+		"default_entity_id": "sensor.ecowitt_192_168_1_50_outdoor_temperature", "state_topic": "ecowitt/outdoor_temperature/state",
 		"availability_topic": "ecowitt/status", "unit_of_measurement": "°F",
 		"device_class": "temperature", "state_class": "measurement",
 	}
