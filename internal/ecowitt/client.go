@@ -34,6 +34,7 @@ func NewClient(address string, tickRate time.Duration, httpClient *http.Client, 
 		shouldStop: make(chan bool),
 		tickRate:   tickRate,
 		httpClient: httpClient,
+		metrics:    metrics,
 	}
 }
 
