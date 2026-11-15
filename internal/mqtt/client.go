@@ -58,8 +58,22 @@ func (c *Client) ResetDiscovery() {
 	c.mu.Unlock()
 }
 
+var pahoLogOnce sync.Once
+
+// enablePahoErrorLogging routes paho's ERROR/CRITICAL output (no-ops by
+// default) to the standard logger. Without it, connection failures such as a
+// TLS handshake or client-certificate rejection are retried silently and the
+// cause never appears in the logs.
+func enablePahoErrorLogging() {
+	pahoLogOnce.Do(func() {
+		paho.ERROR = log.New(log.Writer(), "MQTT error: ", log.LstdFlags)
+		paho.CRITICAL = log.New(log.Writer(), "MQTT critical: ", log.LstdFlags)
+	})
+}
+
 // Connect connects to the broker described by cfg and returns a ready Client.
 func Connect(cfg models.MQTTConfig, deviceID string) (*Client, error) {
+	enablePahoErrorLogging()
 	cfg = cfg.WithDefaults()
 	c := NewClient(cfg, nil, deviceID)
 	opts := paho.NewClientOptions().
