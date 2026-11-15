@@ -13,6 +13,10 @@ The daemon reads a JSON file (default `/var/lib/ecowitt-statsd/config.json`, ove
   "prometheus": {
     "enabled": true,
     "listenAddress": ":9090"
+  },
+  "mqtt": {
+    "enabled": false,
+    "broker": "tcp://192.168.1.10:1883"
   }
 }
 ```
@@ -34,3 +38,35 @@ scrape_configs:
     static_configs:
       - targets: ["localhost:9090"]
 ```
+
+## MQTT / Home Assistant
+When `mqtt.enabled` is true, every gauge is published to MQTT and registered in Home Assistant through
+MQTT Discovery, so sensors appear automatically under one "Ecowitt Gateway" device.
+
+```json
+"mqtt": {
+  "enabled": true,
+  "broker": "tcp://192.168.1.10:1883",
+  "username": "user",
+  "password": "secret",
+  "clientId": "ecowitt-statsd",
+  "topicPrefix": "ecowitt",
+  "discoveryPrefix": "homeassistant",
+  "deviceName": "Ecowitt Gateway",
+  "retain": false
+}
+```
+
+Only `enabled` and `broker` are required; the values shown for `clientId`, `topicPrefix`,
+`discoveryPrefix` and `deviceName` are the defaults, and `retain` (retain state messages) defaults to false.
+
+Topics (`<deviceId>` is `ecowitt_` plus the gateway host with non-alphanumerics replaced by `_`,
+e.g. `ecowitt_192_168_1_50`; `<objectId>` is the snake_case metric name, plus `_ch<N>` for channel sensors,
+e.g. `outdoor_temperature` or `channel_temperature_ch2`):
+
+- `<topicPrefix>/status`: `online` / `offline` (retained; `offline` is also the last-will message).
+- `<topicPrefix>/<objectId>/state`: the value as a plain number.
+- `<discoveryPrefix>/sensor/<deviceId>/<objectId>/config`: retained discovery config, sent the first time
+  a sensor is seen and again after every reconnect.
+
+If the broker cannot be reached at startup, the error is logged and the daemon continues without MQTT.

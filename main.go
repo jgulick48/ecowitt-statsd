@@ -17,6 +17,7 @@ import (
 	"github.com/jgulick48/ecowitt-statsd/internal/ecowitt"
 	"github.com/jgulick48/ecowitt-statsd/internal/metrics"
 	"github.com/jgulick48/ecowitt-statsd/internal/models"
+	ecomqtt "github.com/jgulick48/ecowitt-statsd/internal/mqtt"
 	"github.com/jgulick48/ecowitt-statsd/internal/prometheus"
 )
 
@@ -24,7 +25,7 @@ var configLocation = flag.String("configFile", "/var/lib/ecowitt-statsd/config.j
 
 func main() {
 	flag.Parse()
-	config :=LoadClientConfig(*configLocation)
+	config := LoadClientConfig(*configLocation)
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 	done := make(chan bool, 1)
@@ -61,12 +62,25 @@ func main() {
 			}
 		}()
 	}
+	var mqttClient *ecomqtt.Client
+	if config.MQTT.Enabled {
+		mc, err := ecomqtt.Connect(config.MQTT, ecomqtt.DeviceID(config.Host))
+		if err != nil {
+			log.Printf("Error connecting to MQTT, continuing without it: %s", err.Error())
+		} else {
+			mqttClient = mc
+			clients = append(clients, mc)
+		}
+	}
 	metricsClient := metrics.NewMultiClient(clients...)
 	client := ecowitt.NewClient(config.Host, 10*time.Second, http.DefaultClient, metricsClient)
 	go client.StartScan()
 	fmt.Println("Running application")
 	<-done
 	client.StopScan()
+	if mqttClient != nil {
+		mqttClient.Close()
+	}
 	if httpServer != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
