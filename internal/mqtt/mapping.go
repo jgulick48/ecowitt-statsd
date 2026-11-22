@@ -78,6 +78,11 @@ func HAUnit(name, unit string) string {
 		return "°"
 	case "uvIndex":
 		return "UV index"
+	case "outdoorHumidity", "indoorHumidity", "channelHumidity":
+		// Humidity is always a percentage, but the gateway either sends no
+		// unit or embeds "%" in the value (stripped before parsing). Home
+		// Assistant rejects device_class humidity without a "%" unit.
+		return "%"
 	}
 	if unit == "" {
 		return ""

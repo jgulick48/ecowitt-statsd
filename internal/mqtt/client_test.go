@@ -94,14 +94,35 @@ func TestOmitsEmptyUnitAndSkipsUnknown(t *testing.T) {
 	if len(f.msgs) != 0 {
 		t.Fatal("unknown metric published")
 	}
-	c.SendGaugeMetric("ecowitt.indoorHumidity", nil, 40)
+	c.SendGaugeMetric("ecowitt.solarIrradiance", nil, 400)
 	var got map[string]interface{}
 	_ = json.Unmarshal([]byte(f.msgs[0].payload), &got)
 	if _, ok := got["unit_of_measurement"]; ok {
 		t.Error("unit should be omitted")
 	}
-	if got["device_class"] != "humidity" {
-		t.Error("want humidity")
+}
+
+// Home Assistant rejects device_class humidity unless the unit is "%". The
+// gateway sends humidity without a unit tag, so it must always be filled in.
+func TestHumidityAlwaysPercent(t *testing.T) {
+	cases := []struct {
+		name string
+		tags []string
+	}{
+		{"ecowitt.indoorHumidity", nil},
+		{"ecowitt.outdoorHumidity", []string{"unit:"}},
+		{"ecowitt.channelHumidity", []string{"channel:2", "name:Garage"}},
+	}
+	for _, tc := range cases {
+		c, f := newTest()
+		c.SendGaugeMetric(tc.name, tc.tags, 48)
+		var got map[string]interface{}
+		if err := json.Unmarshal([]byte(f.msgs[0].payload), &got); err != nil {
+			t.Fatal(err)
+		}
+		if got["device_class"] != "humidity" || got["unit_of_measurement"] != "%" {
+			t.Errorf("%s: device_class=%v unit=%v, want humidity and %%", tc.name, got["device_class"], got["unit_of_measurement"])
+		}
 	}
 }
 
@@ -138,7 +159,9 @@ func TestMappings(t *testing.T) {
 		{"dewPoint", "C", "temperature", "°C"},
 		{"channelTemperature", "F", "temperature", "°F"},
 		{"outdoorHumidity", "%", "humidity", "%"},
-		{"channelHumidity", "", "humidity", ""},
+		{"channelHumidity", "", "humidity", "%"},
+		{"indoorHumidity", "", "humidity", "%"},
+		{"outdoorHumidity", "", "humidity", "%"},
 		{"relativePressure", "inHg", "atmospheric_pressure", "inHg"},
 		{"absolutePressure", "hPa", "atmospheric_pressure", "hPa"},
 		{"absolutePressure", "mmHg", "atmospheric_pressure", "mmHg"},
