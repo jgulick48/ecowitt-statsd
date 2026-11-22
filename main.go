@@ -73,7 +73,10 @@ func main() {
 		}
 	}
 	metricsClient := metrics.NewMultiClient(clients...)
-	client := ecowitt.NewClient(config.Host, 10*time.Second, http.DefaultClient, metricsClient)
+	client := ecowitt.NewClientWithOptions(config.Host, http.DefaultClient, metricsClient, ecowitt.Options{
+		TickRate:         10 * time.Second,
+		FailureThreshold: config.FailureThreshold,
+	})
 	go client.StartScan()
 	fmt.Println("Running application")
 	<-done

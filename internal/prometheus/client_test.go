@@ -90,3 +90,26 @@ func TestConcurrentUse(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestSetGatewayStatusDropsStaleSeries(t *testing.T) {
+	c := NewClient(nil)
+	c.SendGaugeMetric("ecowitt.outdoorTemperature", []string{"unit:F"}, 72.5)
+	c.SendGaugeMetric("ecowitt.up", nil, 0)
+	c.SendGaugeMetric("ecowitt.lastSuccessTimestamp", nil, 1700000000)
+	c.SetGatewayStatus(true)
+	if out := scrape(c); !strings.Contains(out, "ecowitt_outdoor_temperature") {
+		t.Fatal("up must not reset")
+	}
+	c.SetGatewayStatus(false)
+	out := scrape(c)
+	if strings.Contains(out, "ecowitt_outdoor_temperature{") {
+		t.Fatalf("stale series remain:\n%s", out)
+	}
+	if !strings.Contains(out, "ecowitt_up 0") || !strings.Contains(out, "ecowitt_last_success_timestamp") {
+		t.Fatalf("health gauges missing:\n%s", out)
+	}
+	c.SendGaugeMetric("ecowitt.outdoorTemperature", []string{"unit:F"}, 70)
+	if !strings.Contains(scrape(c), "ecowitt_outdoor_temperature{") {
+		t.Fatal("series should repopulate")
+	}
+}
