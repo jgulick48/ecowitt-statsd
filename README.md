@@ -26,6 +26,9 @@ The daemon reads a JSON file (default `/var/lib/ecowitt-statsd/config.json`, ove
 - `prometheus.enabled`: serve a Prometheus endpoint.
 - `prometheus.listenAddress`: listen address, defaults to `:9090`.
 
+The Docker image runs as non-root UID 10001, so a config directory mounted into the container must be
+readable by that UID, e.g. `chown -R 10001:10001 /path/to/config`.
+
 ## Prometheus /metrics endpoint
 When enabled, metrics are served at `http://<host>:9090/metrics`. Names are converted to
 snake_case with dots as underscores, e.g. `ecowitt.outdoorTemperature` becomes
