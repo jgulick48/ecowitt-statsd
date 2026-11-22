@@ -42,6 +42,8 @@ type Client struct {
 	publisher Publisher
 	sent      map[string]bool
 	closer    func()
+	gwKnown   bool
+	gwUp      bool
 }
 
 // NewClient creates a Client. A nil publisher drops all messages.
@@ -99,8 +101,8 @@ func Connect(cfg models.MQTTConfig, deviceID string) (*Client, error) {
 	}
 	opts.SetOnConnectHandler(func(pc paho.Client) {
 		c.ResetDiscovery()
-		if err := (pahoPublisher{pc}).Publish(c.statusTopic(), 0, true, []byte("online")); err != nil {
-			log.Printf("MQTT online publish failed: %s", err)
+		if err := (pahoPublisher{pc}).Publish(c.statusTopic(), 0, true, c.currentStatusPayload()); err != nil {
+			log.Printf("MQTT status publish failed: %s", err)
 		}
 	})
 	opts.SetConnectionLostHandler(func(_ paho.Client, err error) {
@@ -122,6 +124,31 @@ func Connect(cfg models.MQTTConfig, deviceID string) (*Client, error) {
 	c.closer = func() { pc.Disconnect(250) }
 	c.mu.Unlock()
 	return c, nil
+}
+
+// currentStatusPayload returns the availability payload for the current
+// gateway state: offline until the gateway has been seen up.
+func (c *Client) currentStatusPayload() []byte {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.gwKnown && c.gwUp {
+		return []byte("online")
+	}
+	return []byte("offline")
+}
+
+// SetGatewayStatus records the gateway state and publishes it (retained) to the status topic.
+func (c *Client) SetGatewayStatus(up bool) {
+	c.mu.Lock()
+	c.gwKnown, c.gwUp = true, up
+	p := c.publisher
+	c.mu.Unlock()
+	if p == nil {
+		return
+	}
+	if err := p.Publish(c.statusTopic(), 0, true, c.currentStatusPayload()); err != nil {
+		log.Printf("MQTT status publish failed: %s", err)
+	}
 }
 
 // Close publishes offline and disconnects.
@@ -167,7 +194,9 @@ func (c *Client) SendGaugeMetric(name string, tags []string, value float64) {
 			log.Printf("MQTT panic recovered: %v", r)
 		}
 	}()
-	if baseName(name) == "" {
+	switch baseName(name) {
+	case "", "up", "lastSuccessTimestamp":
+		// Gateway health is exposed through the availability topic instead.
 		return
 	}
 	c.mu.Lock()

@@ -25,6 +25,17 @@ The daemon reads a JSON file (default `/var/lib/ecowitt-statsd/config.json`, ove
 - `defaultTags`: `key:value` tags added to every metric (statsd tags / Prometheus labels).
 - `prometheus.enabled`: serve a Prometheus endpoint.
 - `prometheus.listenAddress`: listen address, defaults to `:9090`.
+- `failureThreshold`: number of consecutive failed scans (request error, non-200 status, unreadable body or
+  invalid JSON) before the gateway is considered down. Defaults to `3`. Any successful scan marks it up again.
+
+## Gateway health
+Every scan emits `ecowitt.up` (`1` when the gateway is up, `0` when down; before the first successful scan it
+is `0`) and, after a successful scan, `ecowitt.lastSuccessTimestamp` (Unix seconds). In Prometheus these are
+`ecowitt_up` and `ecowitt_last_success_timestamp`.
+
+When the gateway goes down, Prometheus drops all sensor series (everything except `ecowitt_up` and
+`ecowitt_last_success_timestamp`) so stale values are not served; they reappear on the first scan after
+recovery. MQTT/Home Assistant is notified too, see below.
 
 ## Prometheus /metrics endpoint
 When enabled, metrics are served at `http://<host>:9090/metrics`. Names are converted to
@@ -64,7 +75,10 @@ Topics (`<deviceId>` is `ecowitt_` plus the gateway host with non-alphanumerics 
 e.g. `ecowitt_192_168_1_50`; `<objectId>` is the snake_case metric name, plus `_ch<N>` for channel sensors,
 e.g. `outdoor_temperature` or `channel_temperature_ch2`):
 
-- `<topicPrefix>/status`: `online` / `offline` (retained; `offline` is also the last-will message).
+- `<topicPrefix>/status`: `online` / `offline` (retained). It reflects gateway reachability, not just the broker
+  connection: `online` once the gateway is up, `offline` while it is down (and before the first successful scan),
+  so Home Assistant marks every sensor unavailable. `offline` is also the last-will message. On reconnect the
+  current state is republished. `ecowitt.up` and `ecowitt.lastSuccessTimestamp` get no Home Assistant entities.
 - `<topicPrefix>/<objectId>/state`: the value as a plain number.
 - `<discoveryPrefix>/sensor/<deviceId>/<objectId>/config`: retained discovery config, sent the first time
   a sensor is seen and again after every reconnect.

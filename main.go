@@ -73,7 +73,13 @@ func main() {
 		}
 	}
 	metricsClient := metrics.NewMultiClient(clients...)
-	client := ecowitt.NewClient(config.Host, 10*time.Second, http.DefaultClient, metricsClient)
+	// A bounded timeout makes a hung gateway count as a failed scan instead of
+	// blocking the poll loop forever.
+	gatewayHTTP := &http.Client{Timeout: 8 * time.Second}
+	client := ecowitt.NewClientWithOptions(config.Host, gatewayHTTP, metricsClient, ecowitt.Options{
+		TickRate:         10 * time.Second,
+		FailureThreshold: config.FailureThreshold,
+	})
 	go client.StartScan()
 	fmt.Println("Running application")
 	<-done
