@@ -18,7 +18,7 @@ IMAGE ?= docker.io/jgulick48/ecowitt-statsd
 VERSION ?= $(shell date -u +%Y.%m.%d-%H%M)
 VERSION := $(VERSION)
 GIT_SHA := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
-PLATFORMS ?= linux/arm/v7,linux/arm64/v8,linux/amd64
+PLATFORMS ?= linux/arm/v6,linux/arm/v7,linux/arm64/v8,linux/amd64
 # Builds run on the remote build machine through this docker context.
 BUILD_CONTEXT ?= casp-build-01
 BUILDER ?= ecowitt-statsd
