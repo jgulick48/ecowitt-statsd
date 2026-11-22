@@ -12,6 +12,9 @@ type EcowittConfiguration struct {
 	DefaultTags []string         `json:"defaultTags"`
 	Prometheus  PrometheusConfig `json:"prometheus"`
 	MQTT        MQTTConfig       `json:"mqtt"`
+	// FailureThreshold is the number of consecutive failed scans before the
+	// gateway is considered down. Defaults to 3 when <= 0.
+	FailureThreshold int `json:"failureThreshold"`
 }
 
 // MQTTConfig configures the MQTT / Home Assistant discovery output.

@@ -25,6 +25,17 @@ The daemon reads a JSON file (default `/var/lib/ecowitt-statsd/config.json`, ove
 - `defaultTags`: `key:value` tags added to every metric (statsd tags / Prometheus labels).
 - `prometheus.enabled`: serve a Prometheus endpoint.
 - `prometheus.listenAddress`: listen address, defaults to `:9090`.
+- `failureThreshold`: number of consecutive failed scans (request error, non-200 status, unreadable body or
+  invalid JSON) before the gateway is considered down. Defaults to `3`. Any successful scan marks it up again.
+
+## Gateway health
+Every scan emits `ecowitt.up` (`1` when the gateway is up, `0` when down; before the first successful scan it
+is `0`) and, after a successful scan, `ecowitt.lastSuccessTimestamp` (Unix seconds). In Prometheus these are
+`ecowitt_up` and `ecowitt_last_success_timestamp`.
+
+When the gateway goes down, Prometheus drops all sensor series (everything except `ecowitt_up` and
+`ecowitt_last_success_timestamp`) so stale values are not served; they reappear on the first scan after
+recovery. MQTT/Home Assistant is notified too, see below.
 
 ## Prometheus /metrics endpoint
 When enabled, metrics are served at `http://<host>:9090/metrics`. Names are converted to
@@ -61,12 +72,15 @@ Only `enabled` and `broker` are required; the values shown for `clientId`, `topi
 `discoveryPrefix` and `deviceName` are the defaults, and `retain` (retain state messages) defaults to false.
 
 Topics (`<deviceId>` is `ecowitt_` plus the gateway host with non-alphanumerics replaced by `_`,
-e.g. `ecowitt_192_168_1_50`; `<objectId>` is the snake_case metric name, plus `_ch<N>` for channel sensors,
-e.g. `outdoor_temperature` or `channel_temperature_ch2`):
+e.g. `ecowitt_192_168_1_50`; `<objectId>` is the snake_case metric name, plus `_<sensor>` and `_ch<N>` for battery and channel sensors,
+e.g. `outdoor_temperature`, `channel_temperature_ch2` or `battery_level_wh41_ch1`):
 
-- `<topicPrefix>/status`: `online` / `offline` (retained; `offline` is also the last-will message).
+- `<topicPrefix>/status`: `online` / `offline` (retained). It reflects gateway reachability, not just the broker
+  connection: `online` once the gateway is up, `offline` while it is down (and before the first successful scan),
+  so Home Assistant marks every sensor unavailable. `offline` is also the last-will message. On reconnect the
+  current state is republished. `ecowitt.up` and `ecowitt.lastSuccessTimestamp` get no Home Assistant entities.
 - `<topicPrefix>/<objectId>/state`: the value as a plain number.
-- `<discoveryPrefix>/sensor/<deviceId>/<objectId>/config`: retained discovery config, sent the first time
+- `<discoveryPrefix>/<sensor|binary_sensor>/<deviceId>/<objectId>/config`: retained discovery config, sent the first time
   a sensor is seen and again after every reconnect.
 
 If the broker cannot be reached at startup, the daemon keeps retrying in the background every 30 seconds.
@@ -102,6 +116,69 @@ All `tls` fields are optional. The settings only apply when the broker URL uses 
 is logged. In Docker, mount the files into the container, e.g. under `/var/lib/ecowitt-statsd/`, and
 reference those paths. Invalid TLS settings (unreadable files, mismatched key) disable MQTT with an error
 in the log.
+
+## Metrics
+
+Metric names are prefixed with `ecowitt.` (`ecowitt_` in Prometheus). Every metric carries a `unit` tag (empty
+when it has no unit) except as noted. The "HA entity" column is the Home Assistant entity type created through
+MQTT discovery.
+
+| Metric | Source section | Unit | HA entity |
+|---|---|---|---|
+| `outdoorTemperature`, `feelsLike`, `dewPoint`, `windChill`, `heatIndex` | `common_list` | gateway unit (F/C) | sensor (temperature) |
+| `outdoorHumidity`, `indoorHumidity` | `common_list` / `wh25` | % | sensor (humidity) |
+| `indoorTemperature` | `wh25` / `common_list` | gateway unit | sensor (temperature) |
+| `absolutePressure`, `relativePressure` | `wh25` / `common_list` | gateway unit | sensor (atmospheric_pressure) |
+| `vaporPressureDeficit` | `common_list` (`5`) | kPa | sensor (pressure) |
+| `windSpeed`, `windGust`, `maxWindGust` | `common_list` | gateway unit | sensor (wind_speed) |
+| `windDirection`, `windDirectionAvg10m` | `common_list` | degrees | sensor |
+| `solarIrradiance` | `common_list` | W/m2 | sensor (irradiance) |
+| `uvRadiation` | `common_list` (`0x16`) | uW/m2 | sensor (no class) |
+| `uvIndex` | `common_list` | UV index | sensor |
+| `rainEvent`, `rainDay`, `rainWeek`, `rainMonth`, `rainYear`, `rainHour`, `rainTotal` | `rain` / `common_list` | in/mm | sensor (precipitation, total_increasing) |
+| `rainRate` | `rain` | in/Hr, mm/Hr | sensor (precipitation_intensity) |
+| `piezoRainEvent`, `piezoRainDay`, `piezoRainWeek`, `piezoRainMonth`, `piezoRainYear` | `piezoRain` | in/mm | sensor (precipitation, total_increasing) |
+| `piezoRainRate` | `piezoRain` | in/Hr, mm/Hr | sensor (precipitation_intensity) |
+| `piezoRaining` | `piezoRain` (`srain_piezo`) | 0/1 | binary_sensor (moisture) |
+| `lightningDistance` | `lightning` | mi/km | sensor (distance) |
+| `lightningCount` | `lightning` | none | sensor (total_increasing) |
+| `lightningLastStrikeTimestamp` | `lightning` | Unix seconds (HA state is ISO-8601 UTC) | sensor (timestamp) |
+| `co2`, `co2Avg24h` | `co2` (WH45) | ppm | sensor (carbon_dioxide) |
+| `co2Pm25`, `co2Pm10` | `co2` | ug/m3 | sensor (pm25 / pm10) |
+| `co2Pm25Aqi`, `co2Pm10Aqi` | `co2` (RealAQI) | none | sensor (aqi) |
+| `co2Temperature`, `co2Humidity` | `co2` | F or C, % | sensor (temperature / humidity) |
+| `pm25` | `ch_pm25` (WH41/43) | ug/m3 | sensor (pm25) |
+| `pm25Aqi`, `pm25Avg24hAqi` | `ch_pm25` | none | sensor (aqi) |
+| `leak` | `ch_leak` (WH55) | 0/1 (1 = status other than Normal) | binary_sensor (moisture) |
+| `soilMoisture` | `ch_soil` (WH51) | % | sensor (moisture) |
+| `probeTemperature` | `ch_temp` (WN34) | F or C | sensor (temperature) |
+| `leafWetness` | `ch_leaf` (WN35) | % | sensor (moisture) |
+| `channelTemperature`, `channelHumidity` | `ch_aisle` (WH31) | F or C, % | sensor |
+| `batteryLow` | every section with a battery field | 0/1 | binary_sensor (battery), diagnostic |
+| `batteryLevel` | level-type sensors | % | sensor (battery), diagnostic |
+| `batteryVoltage` | any section with a `voltage` field | V | sensor (voltage), diagnostic |
+
+Channel sensors (`ch_*`) are tagged `channel` and `name` (empty when unnamed) plus `unit`.
+
+### Batteries
+Battery metrics are tagged `sensor` (`wh31`, `wn34`, `wh41`, `wh55`, `wh57`, `wh45`, `wh51`, `wn35`, `wh40` for
+the rain gauge, `ws90` for the piezo rain / WS90, `wh25`), `channel` (empty for single sensors) and `unit`.
+
+- Binary sensors (WH31, WN34, WH25): the gateway reports `0` = OK, `1` = low. Only `batteryLow` is emitted.
+- Level sensors (WH41, WH55, WH57, WH45, WH51, WN35, WH40, WS90): `0`-`5`, where `5` is full and `1` or less is
+  low, and `6` means DC/USB powered. `batteryLow` is `1` when the level is `1` or less (and `0` for `6`);
+  `batteryLevel` is the level times 20 as a percentage (0-100) and is not emitted for DC powered sensors.
+- `batteryVoltage` is emitted whenever the gateway reports a `voltage` for the sensor.
+
+In Home Assistant the object IDs include the sensor and channel, e.g. `battery_level_wh41_ch1`,
+`battery_low_wh31_ch2` or `battery_voltage_ws90`.
+
+Section and battery formats are based on Ecowitt's documented local API format and can vary by gateway model and
+firmware. Missing or unparseable fields are skipped (and logged) instead of failing the scan.
+
+### Unknown sensor IDs
+`common_list` IDs that are not mapped are not published. Each unknown ID is logged once with its raw value
+(`Unknown sensor id ...`). Please report these in an issue so they can be added.
 
 ## Releasing
 

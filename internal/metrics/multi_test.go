@@ -28,3 +28,24 @@ func TestNewMultiClientFansOutAndSkipsNil(t *testing.T) {
 func TestNewMultiClientEmpty(t *testing.T) {
 	NewMultiClient().SendGaugeMetric("x", nil, 1)
 }
+
+type statusFake struct {
+	fake
+	got []bool
+}
+
+func (s *statusFake) SetGatewayStatus(up bool) { s.got = append(s.got, up) }
+
+func TestMultiClientForwardsStatus(t *testing.T) {
+	a, plain := &statusFake{}, &fake{}
+	m := NewMultiClient(a, plain)
+	sr, ok := m.(StatusReceiver)
+	if !ok {
+		t.Fatal("multi client should implement StatusReceiver")
+	}
+	sr.SetGatewayStatus(false)
+	sr.SetGatewayStatus(true)
+	if len(a.got) != 2 || a.got[0] || !a.got[1] {
+		t.Fatalf("got %v", a.got)
+	}
+}
