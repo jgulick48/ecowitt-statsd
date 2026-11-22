@@ -21,4 +21,6 @@ COPY --from=builder /app/ecowitt-statsd /bin/ecowitt-statsd
 
 EXPOSE 9090
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 CMD ["/bin/ecowitt-statsd","-healthcheck"]
+
 CMD ["/bin/ecowitt-statsd","-configFile=/var/lib/ecowitt-statsd/config.json"]

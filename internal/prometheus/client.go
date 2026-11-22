@@ -150,3 +150,25 @@ func (c *Client) SendGaugeMetric(name string, tags []string, value float64) {
 	}
 	g.Set(value)
 }
+
+// resetExempt lists gauges that survive a gateway-down reset because they
+// describe the gateway's health rather than sensor readings.
+var resetExempt = map[string]bool{
+	"ecowitt_up":                     true,
+	"ecowitt_last_success_timestamp": true,
+}
+
+// SetGatewayStatus clears stale sensor series when the gateway goes down.
+// When it comes back up the series repopulate on the next scan.
+func (c *Client) SetGatewayStatus(up bool) {
+	if up {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for name, entry := range c.gauges {
+		if !resetExempt[name] {
+			entry.vec.Reset()
+		}
+	}
+}

@@ -8,6 +8,8 @@ The daemon reads a JSON file (default `/var/lib/ecowitt-statsd/config.json`, ove
 {
   "host": "192.168.1.50",
   "port": 80,
+  "pollInterval": "10s",
+  "listenAddress": ":9090",
   "statsServer": "127.0.0.1:8125",
   "defaultTags": ["location:home"],
   "prometheus": {
@@ -21,10 +23,43 @@ The daemon reads a JSON file (default `/var/lib/ecowitt-statsd/config.json`, ove
 }
 ```
 
+- `pollInterval`: how often the gateway is polled, a Go duration such as `"10s"` or `"1m"`. Defaults to `10s`,
+  minimum `2s` (the daemon refuses to start otherwise). The gateway HTTP timeout is 80% of the interval, clamped
+  to 2s-30s. The gateway is also polled once immediately at startup.
+- `listenAddress`: address of the HTTP server. Falls back to `prometheus.listenAddress`, then `:9090`.
+  The HTTP server now always runs (port 9090 by default), even when Prometheus is disabled; `/metrics` is only
+  registered when `prometheus.enabled` is true.
 - `statsServer`: statsd address. If empty, statsd output is disabled.
 - `defaultTags`: `key:value` tags added to every metric (statsd tags / Prometheus labels).
 - `prometheus.enabled`: serve a Prometheus endpoint.
 - `prometheus.listenAddress`: listen address, defaults to `:9090`.
+- `failureThreshold`: number of consecutive failed scans (request error, non-200 status, unreadable body or
+  invalid JSON) before the gateway is considered down. Defaults to `3`. Any successful scan marks it up again.
+
+## Gateway health
+Every scan emits `ecowitt.up` (`1` when the gateway is up, `0` when down; before the first successful scan it
+is `0`) and, after a successful scan, `ecowitt.lastSuccessTimestamp` (Unix seconds). In Prometheus these are
+`ecowitt_up` and `ecowitt_last_success_timestamp`.
+
+When the gateway goes down, Prometheus drops all sensor series (everything except `ecowitt_up` and
+`ecowitt_last_success_timestamp`) so stale values are not served; they reappear on the first scan after
+recovery. MQTT/Home Assistant is notified too, see below.
+
+## Health endpoints
+Both return JSON such as
+`{"status":"ok","gatewayUp":true,"lastSuccess":"2026-01-01T00:00:00Z","lastAttempt":"2026-01-01T00:00:00Z","consecutiveFailures":0,"lastError":""}`
+(`lastSuccess`/`lastAttempt` are `null` until the first success/attempt).
+
+- `/healthz` (liveness): `200` while the poll loop is alive, i.e. the last scan attempt (successful or not) was
+  within `3*pollInterval + 10s`; before the first attempt, process start is used. Otherwise `503` with status
+  `unhealthy`. A down gateway does NOT fail liveness, since restarting the container would not fix it.
+- `/readyz` (readiness): `200` when the gateway is up, otherwise `503` with status `not_ready`.
+
+### Container HEALTHCHECK
+The Dockerfile defines `HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 CMD ["/bin/ecowitt-statsd","-healthcheck"]`,
+so no curl/wget is needed in the image. With `-healthcheck` the binary GETs a URL (3s timeout), exits `0` on
+HTTP 200 and `1` otherwise, without loading the config or starting anything. The URL defaults to
+`http://127.0.0.1:9090/healthz`; override it with `-healthcheckURL` if you change `listenAddress`.
 
 ## Prometheus /metrics endpoint
 When enabled, metrics are served at `http://<host>:9090/metrics`. Names are converted to
@@ -64,7 +99,10 @@ Topics (`<deviceId>` is `ecowitt_` plus the gateway host with non-alphanumerics 
 e.g. `ecowitt_192_168_1_50`; `<objectId>` is the snake_case metric name, plus `_ch<N>` for channel sensors,
 e.g. `outdoor_temperature` or `channel_temperature_ch2`):
 
-- `<topicPrefix>/status`: `online` / `offline` (retained; `offline` is also the last-will message).
+- `<topicPrefix>/status`: `online` / `offline` (retained). It reflects gateway reachability, not just the broker
+  connection: `online` once the gateway is up, `offline` while it is down (and before the first successful scan),
+  so Home Assistant marks every sensor unavailable. `offline` is also the last-will message. On reconnect the
+  current state is republished. `ecowitt.up` and `ecowitt.lastSuccessTimestamp` get no Home Assistant entities.
 - `<topicPrefix>/<objectId>/state`: the value as a plain number.
 - `<discoveryPrefix>/sensor/<deviceId>/<objectId>/config`: retained discovery config, sent the first time
   a sensor is seen and again after every reconnect.

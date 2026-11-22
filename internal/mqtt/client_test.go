@@ -185,3 +185,42 @@ func TestStateClassAndIDs(t *testing.T) {
 		t.Error("device id")
 	}
 }
+
+func TestSetGatewayStatusPublishesRetained(t *testing.T) {
+	c, f := newTest()
+	c.SetGatewayStatus(false)
+	c.SetGatewayStatus(true)
+	if len(f.msgs) != 2 {
+		t.Fatalf("msgs %+v", f.msgs)
+	}
+	for i, want := range []string{"offline", "online"} {
+		m := f.msgs[i]
+		if m.topic != "ecowitt/status" || !m.retained || m.payload != want {
+			t.Fatalf("msg %d: %+v", i, m)
+		}
+	}
+}
+
+func TestHealthMetricsCreateNoDiscovery(t *testing.T) {
+	c, f := newTest()
+	c.SendGaugeMetric("ecowitt.up", nil, 1)
+	c.SendGaugeMetric("ecowitt.lastSuccessTimestamp", nil, 1700000000)
+	if len(f.msgs) != 0 {
+		t.Fatalf("unexpected msgs %+v", f.msgs)
+	}
+}
+
+func TestCurrentStatusPayload(t *testing.T) {
+	c, _ := newTest()
+	if got := string(c.currentStatusPayload()); got != "offline" {
+		t.Fatalf("initial %q", got)
+	}
+	c.SetGatewayStatus(true)
+	if got := string(c.currentStatusPayload()); got != "online" {
+		t.Fatalf("up %q", got)
+	}
+	c.SetGatewayStatus(false)
+	if got := string(c.currentStatusPayload()); got != "offline" {
+		t.Fatalf("down %q", got)
+	}
+}
