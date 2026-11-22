@@ -1,0 +1,24 @@
+{
+ "common_list":[
+  {"id":"0x02","val":"72.5","unit":"F"},{"id":"0x07","val":"55%"},{"id":"3","val":"73.1","unit":"F"},
+  {"id":"0x03","val":"55.2","unit":"F"},{"id":"0x04","val":"72.5","unit":"F"},{"id":"0x05","val":"74.0","unit":"F"},
+  {"id":"5","val":"0.612 kPa"},{"id":"0x0A","val":"212"},{"id":"0x6D","val":"205"},{"id":"0x0B","val":"3.4 mph"},
+  {"id":"0x0C","val":"5.8 mph"},{"id":"0x19","val":"12.1 mph"},{"id":"0x15","val":"412.30 W/m2"},
+  {"id":"0x16","val":"45.2"},{"id":"0x17","val":"3"}],
+ "rain":[{"id":"0x0D","val":"0.00 in"},{"id":"0x0E","val":"0.00 in/Hr"},{"id":"0x10","val":"0.12 in"},
+         {"id":"0x11","val":"0.50 in"},{"id":"0x12","val":"1.20 in"},{"id":"0x13","val":"20.10 in"},
+         {"id":"0x13","val":"20.10 in","battery":"5","voltage":"3.12"}],
+ "piezoRain":[{"id":"0x0D","val":"0.00 in"},{"id":"0x0E","val":"0.00 in/Hr"},{"id":"0x10","val":"0.10 in"},
+              {"id":"0x11","val":"0.40 in"},{"id":"0x12","val":"1.10 in"},{"id":"0x13","val":"19.80 in"},
+              {"id":"srain_piezo","val":"0"},{"id":"0x13","val":"19.80 in","battery":"5","voltage":"3.10","ws90cap_volt":"5.2"}],
+ "wh25":[{"intemp":"70.1","unit":"F","inhumi":"40%","abs":"29.80 inHg","rel":"29.95 inHg"}],
+ "lightning":[{"distance":"12 mi","date":"2026-11-20T14:03:11","timestamp":"11/20/2026 14:03:11","count":"3","battery":"4"}],
+ "co2":[{"temperf":"71.2","humidity":"41%","PM25":"5.0","PM25_RealAQI":"21","PM25_24HAQI":"18",
+         "PM10":"6.0","PM10_RealAQI":"6","PM10_24HAQI":"5","CO2":"512","CO2_24H":"498","battery":"6"}],
+ "ch_pm25":[{"channel":"1","PM25":"6.0","PM25_RealAQI":"25","PM25_24HAQI":"22","battery":"5"}],
+ "ch_leak":[{"channel":"1","name":"Basement","battery":"4","status":"Normal"},{"channel":"2","name":"","battery":"1","status":"Leaking"}],
+ "ch_aisle":[{"channel":"2","name":"Garage","battery":"0","temp":"61.0","unit":"F","humidity":"48%"}],
+ "ch_soil":[{"channel":"1","name":"Garden","battery":"5","voltage":"1.5","humidity":"38%"}],
+ "ch_temp":[{"channel":"1","name":"Pool","temp":"78.4","unit":"F","battery":"0","voltage":"1.48"}],
+ "ch_leaf":[{"channel":"1","name":"","humidity":"12%","battery":"5","voltage":"1.45"}]
+}

@@ -206,10 +206,15 @@ func (c *Client) SendGaugeMetric(name string, tags []string, value float64) {
 		return
 	}
 	objectID := ObjectName(name)
+	sensor := tagValue(tags, "sensor")
+	if sensor != "" {
+		objectID += "_" + sanitizeID(sensor)
+	}
 	channel := tagValue(tags, "channel")
 	if channel != "" {
 		objectID += "_ch" + sanitizeID(channel)
 	}
+	component := Component(name)
 
 	c.mu.Lock()
 	need := !c.sent[objectID]
@@ -217,12 +222,11 @@ func (c *Client) SendGaugeMetric(name string, tags []string, value float64) {
 	if need {
 		unit := tagValue(tags, "unit")
 		cfg := map[string]interface{}{
-			"name":               humanName(name, channel, tagValue(tags, "name")),
+			"name":               humanName(name, sensor, channel, tagValue(tags, "name")),
 			"unique_id":          c.deviceID + "_" + objectID,
-			"default_entity_id":  "sensor." + c.deviceID + "_" + objectID,
+			"default_entity_id":  component + "." + c.deviceID + "_" + objectID,
 			"state_topic":        c.stateTopic(objectID),
 			"availability_topic": c.statusTopic(),
-			"state_class":        StateClass(name),
 			"device": map[string]interface{}{
 				"identifiers":  []string{c.deviceID},
 				"name":         c.cfg.DeviceName,
@@ -230,18 +234,29 @@ func (c *Client) SendGaugeMetric(name string, tags []string, value float64) {
 				"model":        "Gateway",
 			},
 		}
-		if u := HAUnit(name, unit); u != "" {
-			cfg["unit_of_measurement"] = u
+		if component == "binary_sensor" {
+			cfg["payload_on"] = "1"
+			cfg["payload_off"] = "0"
+		} else {
+			if sc := StateClass(name); sc != "" {
+				cfg["state_class"] = sc
+			}
+			if u := HAUnit(name, unit); u != "" {
+				cfg["unit_of_measurement"] = u
+			}
 		}
 		if dc := DeviceClass(name, unit); dc != "" {
 			cfg["device_class"] = dc
+		}
+		if ec := EntityCategory(name); ec != "" {
+			cfg["entity_category"] = ec
 		}
 		payload, err := json.Marshal(cfg)
 		if err != nil {
 			log.Printf("MQTT discovery marshal failed for %s: %s", objectID, err)
 			return
 		}
-		topic := fmt.Sprintf("%s/sensor/%s/%s/config", c.cfg.DiscoveryPrefix, c.deviceID, objectID)
+		topic := fmt.Sprintf("%s/%s/%s/%s/config", c.cfg.DiscoveryPrefix, component, c.deviceID, objectID)
 		if err := p.Publish(topic, 0, true, payload); err != nil {
 			log.Printf("MQTT discovery publish failed for %s: %s", objectID, err)
 		} else {
@@ -250,7 +265,11 @@ func (c *Client) SendGaugeMetric(name string, tags []string, value float64) {
 			c.mu.Unlock()
 		}
 	}
-	if err := p.Publish(c.stateTopic(objectID), 0, c.cfg.Retain, []byte(strconv.FormatFloat(value, 'f', -1, 64))); err != nil {
+	state := strconv.FormatFloat(value, 'f', -1, 64)
+	if IsTimestamp(name) {
+		state = time.Unix(int64(value), 0).UTC().Format(time.RFC3339)
+	}
+	if err := p.Publish(c.stateTopic(objectID), 0, c.cfg.Retain, []byte(state)); err != nil {
 		log.Printf("MQTT state publish failed for %s: %s", objectID, err)
 	}
 }
