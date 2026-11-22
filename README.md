@@ -26,6 +26,77 @@ The daemon reads a JSON file (default `/var/lib/ecowitt-statsd/config.json`, ove
 - `prometheus.enabled`: serve a Prometheus endpoint.
 - `prometheus.listenAddress`: listen address, defaults to `:9090`.
 
+## Environment variables
+Every setting can also be supplied through environment variables. The JSON file is optional: if it is missing, the daemon runs from environment variables alone. When both are present, environment variables override the file (only when set and non-empty). The gateway host is required, either as `host` in the file or `ECOWITT_HOST`; startup fails otherwise.
+
+| Variable | JSON field |
+| --- | --- |
+| `ECOWITT_HOST` | `host` |
+| `ECOWITT_STATS_SERVER` | `statsServer` |
+| `ECOWITT_DEFAULT_TAGS` (comma-separated) | `defaultTags` |
+| `ECOWITT_PROMETHEUS_ENABLED` | `prometheus.enabled` |
+| `ECOWITT_PROMETHEUS_LISTEN_ADDRESS` | `prometheus.listenAddress` |
+| `ECOWITT_MQTT_ENABLED` | `mqtt.enabled` |
+| `ECOWITT_MQTT_BROKER` | `mqtt.broker` |
+| `ECOWITT_MQTT_USERNAME` (or `_FILE`) | `mqtt.username` |
+| `ECOWITT_MQTT_PASSWORD` (or `_FILE`) | `mqtt.password` |
+| `ECOWITT_MQTT_CLIENT_ID` | `mqtt.clientId` |
+| `ECOWITT_MQTT_TOPIC_PREFIX` | `mqtt.topicPrefix` |
+| `ECOWITT_MQTT_DISCOVERY_PREFIX` | `mqtt.discoveryPrefix` |
+| `ECOWITT_MQTT_DEVICE_NAME` | `mqtt.deviceName` |
+| `ECOWITT_MQTT_RETAIN` | `mqtt.retain` |
+| `ECOWITT_MQTT_TLS_CA_FILE` | `mqtt.tls.caFile` |
+| `ECOWITT_MQTT_TLS_CERT_FILE` | `mqtt.tls.certFile` |
+| `ECOWITT_MQTT_TLS_KEY_FILE` | `mqtt.tls.keyFile` |
+| `ECOWITT_MQTT_TLS_SERVER_NAME` | `mqtt.tls.serverName` |
+| `ECOWITT_MQTT_TLS_INSECURE_SKIP_VERIFY` | `mqtt.tls.insecureSkipVerify` |
+
+Booleans are parsed as Go `strconv.ParseBool` values (`true`, `false`, `1`, `0`, ...); an invalid value is a startup error naming the variable.
+
+Docker run:
+
+```sh
+docker run -d \
+  -e ECOWITT_HOST=192.168.1.50 \
+  -e ECOWITT_STATS_SERVER=statsd:8125 \
+  -e ECOWITT_PROMETHEUS_ENABLED=true \
+  -e ECOWITT_DEFAULT_TAGS=location:home,site:backyard \
+  -p 9090:9090 jgulick48/ecowitt-statsd
+```
+
+docker-compose:
+
+```yaml
+services:
+  ecowitt:
+    image: jgulick48/ecowitt-statsd
+    environment:
+      ECOWITT_HOST: 192.168.1.50
+      ECOWITT_PROMETHEUS_ENABLED: "true"
+    ports:
+      - "9090:9090"
+```
+
+### Docker secrets
+`ECOWITT_MQTT_PASSWORD` and `ECOWITT_MQTT_USERNAME` have `_FILE` variants that read the value from a file (trailing newlines are trimmed). Setting both a variable and its `_FILE` variant is an error.
+
+```yaml
+services:
+  ecowitt:
+    image: jgulick48/ecowitt-statsd
+    environment:
+      ECOWITT_HOST: 192.168.1.50
+      ECOWITT_MQTT_ENABLED: "true"
+      ECOWITT_MQTT_BROKER: ssl://mqtt:8883
+      ECOWITT_MQTT_USERNAME: ecowitt
+      ECOWITT_MQTT_PASSWORD_FILE: /run/secrets/mqtt_password
+    secrets:
+      - mqtt_password
+secrets:
+  mqtt_password:
+    file: ./mqtt_password.txt
+```
+
 ## Prometheus /metrics endpoint
 When enabled, metrics are served at `http://<host>:9090/metrics`. Names are converted to
 snake_case with dots as underscores, e.g. `ecowitt.outdoorTemperature` becomes
