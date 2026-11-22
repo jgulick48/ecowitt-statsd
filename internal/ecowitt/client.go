@@ -21,6 +21,7 @@ const DefaultFailureThreshold = 3
 type Health struct {
 	Up                  bool
 	LastSuccess         time.Time
+	LastAttempt         time.Time // set on every scan, successful or not
 	ConsecutiveFailures int
 	LastError           string
 }
@@ -80,6 +81,8 @@ func (c *client) Health() Health {
 func (c *client) StartScan() {
 	t := time.NewTicker(c.tickRate)
 	defer t.Stop()
+	// Poll right away so data and health appear before the first tick.
+	c.scanMetrics()
 	for {
 		select {
 		case <-t.C:
@@ -99,6 +102,7 @@ func (c *client) StopScan() {
 func (c *client) recordResult(err error) {
 	c.mu.Lock()
 	wasUp := c.health.Up
+	c.health.LastAttempt = time.Now()
 	if err == nil {
 		c.health.Up = true
 		c.health.LastSuccess = time.Now()

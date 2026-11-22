@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 const liveJSON = `{"common_list":[{"id":"0x02","val":"72.5","unit":"F"}],"wh25":[],"ch_aisle":[],"rain":[]}`
@@ -132,5 +133,29 @@ func TestDefaultThreshold(t *testing.T) {
 	c := NewClient("x", 1, http.DefaultClient, &recorder{}).(*client)
 	if c.failureThreshold != DefaultFailureThreshold {
 		t.Fatal(c.failureThreshold)
+	}
+}
+
+func TestLastAttemptSetOnSuccessAndFailure(t *testing.T) {
+	_, mode, addr := newGateway(t)
+	c := NewClientWithOptions(addr, http.DefaultClient, &recorder{}, Options{}).(*client)
+	if !c.Health().LastAttempt.IsZero() {
+		t.Fatal("LastAttempt should start zero")
+	}
+	before := time.Now()
+	if err := c.scanMetrics(); err != nil {
+		t.Fatal(err)
+	}
+	first := c.Health().LastAttempt
+	if first.Before(before) {
+		t.Fatalf("LastAttempt not set on success: %v", first)
+	}
+	mode.Store("500")
+	time.Sleep(2 * time.Millisecond)
+	if err := c.scanMetrics(); err == nil {
+		t.Fatal("expected error")
+	}
+	if second := c.Health().LastAttempt; !second.After(first) {
+		t.Fatalf("LastAttempt not updated on failure: %v vs %v", second, first)
 	}
 }
